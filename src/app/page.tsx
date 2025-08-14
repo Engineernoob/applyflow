@@ -4,6 +4,12 @@ import { useState } from "react";
 import { Job } from "../../types/job";
 import JobCard from "../../components/JobCard";
 import { v4 as uuid } from "uuid";
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  DropResult,
+} from "@hello-pangea/dnd";
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -28,6 +34,21 @@ export default function HomePage() {
 
   function handleFollowUp(job: Job) {
     alert(`(Simulated) Follow-up generated for ${job.title} at ${job.company}`);
+  }
+
+  function handleDragEnd(result: DropResult) {
+    const { source, destination, draggableId } = result;
+
+    if (!destination || source.droppableId === destination.droppableId) return;
+
+    // Updating the job's stage
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === draggableId
+          ? { ...job, stage: destination.droppableId as Job["stage"] }
+          : job
+      )
+    );
   }
 
   const grouped = {
@@ -95,22 +116,43 @@ export default function HomePage() {
       </div>
 
       {/* Job Stages */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {(["Applied", "Interviewing", "Offer"] as const).map((stage) => (
-          <div key={stage}>
-            <h2 className="text-xl font-semibold mb-2">{stage}</h2>
-            <div className="space-y-4">
-              {grouped[stage].map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  onFollowUp={() => handleFollowUp(job)}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {(["Applied", "Interviewing", "Offer"] as const).map((stage) => (
+            <Droppable droppableId={stage} key={stage}>
+              {(provided) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="bg-zinc-900 p-3 rounded border min-h-[300px]"
+                >
+                  <h2 className="text-xl font-semibold mb-2">{stage}</h2>
+
+                  {grouped[stage].map((job, index) => (
+                    <Draggable key={job.id} draggableId={job.id} index={index}>
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          className="mb-4"
+                        >
+                          <JobCard
+                            job={job}
+                            onFollowUp={() => handleFollowUp(job)}
+                          />
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          ))}
+        </div>
+      </DragDropContext>
     </div>
   );
 }
