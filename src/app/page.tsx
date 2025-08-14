@@ -1,19 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Job } from "../../types/job";
 import JobCard from "../../components/JobCard";
-import { v4 as uuid } from "uuid";
 import {
   DragDropContext,
   Droppable,
   Draggable,
   DropResult,
 } from "@hello-pangea/dnd";
+import { supabase } from "../../lib/supabase";
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [newJob, setNewJob] = useState<Omit<Job, "id">>({
+  const [userId, setUserId] = useState<string | null>(null);
+  const [newJob, setNewJob] = useState<
+    Omit<Job, "id" | "created_at" | "user_id">
+  >({
     title: "",
     company: "",
     link: "",
@@ -21,15 +24,49 @@ export default function HomePage() {
     stage: "Applied",
   });
 
-  function addJob() {
-    setJobs((prev) => [...prev, { id: uuid(), ...newJob }]);
-    setNewJob({
-      title: "",
-      company: "",
-      link: "",
-      notes: "",
-      stage: "Applied",
-    });
+  // Fetch current user and their jobs
+  useEffect(() => {
+    const fetchUserAndJobs = async () => {
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+      if (userError || !userData?.user?.id) return;
+
+      const uid = userData.user.id;
+      setUserId(uid);
+
+      const { data: jobsData, error: jobsError } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
+
+      if (!jobsError && jobsData) {
+        setJobs(jobsData);
+      }
+    };
+
+    fetchUserAndJobs();
+  }, []);
+
+  // Insert job into Supabase
+  async function addJob() {
+    if (!userId) return;
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .insert([{ ...newJob, user_id: userId }])
+      .select();
+
+    if (!error && data) {
+      setJobs((prev) => [...data, ...prev]);
+      setNewJob({
+        title: "",
+        company: "",
+        link: "",
+        notes: "",
+        stage: "Applied",
+      });
+    }
   }
 
   function handleFollowUp(job: Job) {
@@ -38,10 +75,8 @@ export default function HomePage() {
 
   function handleDragEnd(result: DropResult) {
     const { source, destination, draggableId } = result;
-
     if (!destination || source.droppableId === destination.droppableId) return;
 
-    // Updating the job's stage
     setJobs((prev) =>
       prev.map((job) =>
         job.id === draggableId
@@ -49,6 +84,8 @@ export default function HomePage() {
           : job
       )
     );
+
+    // TODO: Optional - sync to Supabase on drag
   }
 
   const grouped = {
